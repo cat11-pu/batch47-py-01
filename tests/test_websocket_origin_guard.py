@@ -90,7 +90,7 @@ def test_origin_normalization_canonicalizes_and_rejects_malformed():
 
 def test_revoked_origin_is_closed_and_cannot_be_re_registered():
     guard = make()
-    ticket = guard.issue_ticket(APP, subject="u1", now=T0)
+    ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
     accepted = guard.handshake(
         hs(APP, ticket=ticket), peer="203.0.113.7", now=T0)
     assert accepted["status"] == "accepted"
@@ -149,7 +149,7 @@ def test_ticket_issuance_validates_origin_and_subject():
 
 def test_handshake_requires_websocket_upgrade_version_and_key():
     guard = make()
-    ticket = guard.issue_ticket(APP, subject="u1", now=T0)
+    ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
     base = hs(APP, ticket=ticket)
 
     cases = [
@@ -177,7 +177,7 @@ def test_handshake_requires_websocket_upgrade_version_and_key():
 
 def test_handshake_rejects_missing_null_and_malformed_origin():
     guard = make()
-    ticket = guard.issue_ticket(APP, subject="u1", now=T0)
+    ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
 
     with pytest.raises(og.OriginError) as exc:
         guard.handshake(hs(ticket=ticket), peer="203.0.113.7", now=T0)
@@ -202,7 +202,8 @@ def test_origin_matching_enforces_scheme_port_and_subdomain_boundaries():
     guard = make()
     guard.register_origin(CORP, allow_subdomains=True, max_per_origin=2)
 
-    sub_ticket = guard.issue_ticket("https://a.corp.example.org", subject="u1", now=T0)
+    sub_ticket = guard.issue_ticket(
+        "https://a.corp.example.org", subject="u1", now=T0)["ticket"]
     accepted = guard.handshake(
         hs("https://a.corp.example.org", ticket=sub_ticket),
         peer="203.0.113.7", now=T0)
@@ -230,7 +231,7 @@ def test_origin_matching_enforces_scheme_port_and_subdomain_boundaries():
 def test_ticket_is_single_use_and_origin_bound():
     guard = make()
     guard.register_origin(CORP, allow_subdomains=True)
-    ticket = guard.issue_ticket(APP, subject="u1", now=T0)
+    ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
 
     with pytest.raises(og.OriginError) as exc:
         guard.handshake(hs(CORP, ticket=ticket), peer="203.0.113.7", now=T0)
@@ -257,8 +258,8 @@ def test_ticket_is_single_use_and_origin_bound():
 
 def test_expired_ticket_is_refused_and_expire_counts_once():
     guard = make()
-    fresh = guard.issue_ticket(APP, subject="u1", ttl=60, now=T0)
-    stale = guard.issue_ticket(APP, subject="u2", ttl=60, now=T0)
+    fresh = guard.issue_ticket(APP, subject="u1", ttl=60, now=T0)["ticket"]
+    stale = guard.issue_ticket(APP, subject="u2", ttl=60, now=T0)["ticket"]
 
     early = guard.handshake(hs(APP, ticket=fresh), peer="203.0.113.7",
                             now="2026-11-23T10:00:59+00:00")
@@ -270,7 +271,7 @@ def test_expired_ticket_is_refused_and_expire_counts_once():
     assert exc.value.code == "WS_TICKET_EXPIRED"
     assert guard.ticket_state(stale)["state"] == "expired"
 
-    other = guard.issue_ticket(APP, subject="u3", ttl=30, now=T0)
+    other = guard.issue_ticket(APP, subject="u3", ttl=30, now=T0)["ticket"]
     assert guard.expire(now="2026-11-23T10:00:20+00:00") == 0
     assert guard.expire(now="2026-11-23T10:00:30+00:00") == 1
     assert guard.expire(now="2026-11-23T10:00:30+00:00") == 0
@@ -280,7 +281,8 @@ def test_expired_ticket_is_refused_and_expire_counts_once():
 
 def test_per_origin_capacity_holds_unused_ticket_until_slot_frees():
     guard = make(max_per_origin=2)
-    tickets = [guard.issue_ticket(APP, subject=f"u{i}", now=T0) for i in range(3)]
+    tickets = [guard.issue_ticket(APP, subject=f"u{i}", now=T0)["ticket"]
+               for i in range(3)]
 
     first = guard.handshake(hs(APP, ticket=tickets[0]), peer="p1", now=T0)
     second = guard.handshake(hs(APP, ticket=tickets[1]), peer="p2", now=T0)
@@ -306,8 +308,8 @@ def test_global_capacity_limit_does_not_consume_tickets():
     guard = og.OriginGuard(max_connections=1)
     guard.register_origin(APP)
     guard.register_origin(CORP)
-    app_ticket = guard.issue_ticket(APP, subject="u1", now=T0)
-    corp_ticket = guard.issue_ticket(CORP, subject="u2", now=T0)
+    app_ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
+    corp_ticket = guard.issue_ticket(CORP, subject="u2", now=T0)["ticket"]
 
     assert guard.handshake(
         hs(APP, ticket=app_ticket), peer="p1", now=T0)["status"] == "accepted"
@@ -324,7 +326,7 @@ def test_global_capacity_limit_does_not_consume_tickets():
 
 def test_close_cancels_unused_and_frees_active_session_once():
     guard = make()
-    unused = guard.issue_ticket(APP, subject="u1", now=T0)
+    unused = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
     cancelled = guard.close(unused)
     assert cancelled == {"ticket": unused, "state": "cancelled", "freed": False}
 
@@ -332,7 +334,7 @@ def test_close_cancels_unused_and_frees_active_session_once():
         guard.handshake(hs(APP, ticket=unused), peer="203.0.113.7", now=T0)
     assert exc.value.code == "WS_TICKET_USED"
 
-    active = guard.issue_ticket(APP, subject="u2", now=T0)
+    active = guard.issue_ticket(APP, subject="u2", now=T0)["ticket"]
     guard.handshake(hs(APP, ticket=active), peer="203.0.113.7", now=T0)
     assert guard.close(active)["freed"] is True
     assert guard.origin_status(APP)["active"] == 0
@@ -351,9 +353,9 @@ def test_snapshot_restore_preserves_policies_sessions_and_ticket_state():
     guard = og.OriginGuard()
     guard.register_origin(APP, max_per_origin=2)
     guard.register_origin(CORP, allow_subdomains=True, max_per_origin=1)
-    t1 = guard.issue_ticket(APP, subject="u1", now=T0)
-    t2 = guard.issue_ticket(APP, subject="u2", now=T0)
-    pending = guard.issue_ticket(APP, subject="u3", now=T0)
+    t1 = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
+    t2 = guard.issue_ticket(APP, subject="u2", now=T0)["ticket"]
+    pending = guard.issue_ticket(APP, subject="u3", now=T0)["ticket"]
     guard.handshake(hs(APP, ticket=t1), peer="p1", now=T0)
 
     state = guard.snapshot()
@@ -385,7 +387,7 @@ def test_snapshot_restore_preserves_policies_sessions_and_ticket_state():
 
 def test_corrupt_snapshot_is_rejected_without_touching_state():
     guard = make()
-    ticket = guard.issue_ticket(APP, subject="u1", now=T0)
+    ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
     guard.handshake(hs(APP, ticket=ticket), peer="p1", now=T0)
 
     bad_states = [
@@ -415,7 +417,7 @@ def test_corrupt_snapshot_is_rejected_without_touching_state():
 
 def test_concurrent_handshakes_consume_a_ticket_exactly_once():
     guard = make()
-    ticket = guard.issue_ticket(APP, subject="u1", now=T0)
+    ticket = guard.issue_ticket(APP, subject="u1", now=T0)["ticket"]
 
     barrier = threading.Barrier(8)
     results = []
